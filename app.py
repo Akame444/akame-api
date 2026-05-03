@@ -23,7 +23,7 @@ PROXY_URL = get_formatted_proxy(RAW_PROXY)
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "mode": "Équilibré ⚖️"}
+    return {"status": "En ligne", "mode": "Filtres personnalisés 🚀"}
 
 def get_price_free(url):
     if not PROXY_URL:
@@ -35,13 +35,8 @@ def get_price_free(url):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
     ]
     
-    # LISTE RÉDUITE : On ne garde que les vrais gros problèmes
-    blacklist = [
-        "abim", "abîm", "defaut", "défaut", "damage", "enfonc", "déchir", "trou", 
-        "pli", "griff", "poor", "played", "heavy", "damaged", "skratched", 
-        "whitening", "crease", "dent", "worn", "defect", "beschädigt", "knick",
-        "rmp", "main propre", "vendu", "ebay"
-    ]
+    # --- FILTRES ÉCHANGÉS ---
+    blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir"]
 
     for attempt in range(3):
         try:
@@ -62,7 +57,6 @@ def get_price_free(url):
                 for row in rows:
                     text_ligne = " ".join(row.xpath('.//text()')).lower()
                     
-                    # On ne skip que si un mot de la liste "Vrais Défauts" est là
                     if any(word in text_ligne for word in blacklist):
                         continue
                     
@@ -72,7 +66,7 @@ def get_price_free(url):
                         print(f"💰 PRIX TROUVÉ : {price} €")
                         return price
                 
-                print("⚠️ Aucun vendeur propre trouvé sur cette tentative.")
+                print("⚠️ Aucun vendeur valide trouvé sur cette tentative.")
             
         except Exception as e:
             print(f"⚠️ Erreur : {e}")
@@ -87,7 +81,7 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        await asyncio.sleep(4) # On réduit un peu l'attente entre les cartes
+        await asyncio.sleep(4) 
     return results
 
 if __name__ == "__main__":
