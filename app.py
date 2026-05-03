@@ -2,41 +2,35 @@ import os
 import re
 import asyncio
 import uvicorn
+import requests
 from fastapi import FastAPI, Request
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from lxml import html
 
 app = FastAPI()
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "message": "API AkameTCG active sur Render ! 🚀"}
+    return {"status": "En ligne", "message": "API AkameTCG version ultra-rapide ! 🚀"}
 
 def get_price_free(url):
-    options = uc.ChromeOptions()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
+    # On simule un vrai navigateur avec des Headers
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
     
     try:
-        print(f"🕵️ Scan en cours : {url}")
-        # On force la version 147 pour correspondre à l'installation système
-        driver = uc.Chrome(
-            options=options, 
-            browser_executable_path='/usr/bin/google-chrome-stable',
-            version_main=147 
-        )
+        print(f"🕵️ Scan rapide : {url}")
+        response = requests.get(url, headers=headers, timeout=15)
         
-        driver.get(url)
-        wait = WebDriverWait(driver, 20)
-        wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-body")))
+        if response.status_code != 200:
+            print(f"❌ Erreur Cardmarket : {response.status_code}")
+            return None
+            
+        tree = html.fromstring(response.content)
         
-        from lxml import html
-        tree = html.fromstring(driver.page_source)
+        # On cherche les lignes de prix
         rows = tree.xpath('//div[contains(@class, "table-body")]/div[contains(@class, "row")]')
-        
         blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir"]
         
         for row in rows:
@@ -44,16 +38,17 @@ def get_price_free(url):
             if not any(word in text_ligne for word in blacklist):
                 price_element = row.xpath('.//div[contains(@class, "price-container")]//span/text()')
                 if price_element:
-                    price = float(re.sub(r'[^\d.,]', '', price_element[0]).replace(',', '.'))
+                    # Nettoyage du prix (ex: "15,00 €" -> 15.0)
+                    price_str = price_element[0]
+                    price = float(re.sub(r'[^\d.,]', '', price_str).replace(',', '.'))
                     print(f"💰 PRIX TROUVÉ : {price} €")
-                    driver.quit()
                     return price
-        driver.quit()
+        
+        print("⚠️ Aucun prix valide trouvé sur cette page.")
         return None
+        
     except Exception as e:
         print(f"❌ Erreur : {e}")
-        try: driver.quit()
-        except: pass
         return None
 
 @app.post("/get_prices")
@@ -63,10 +58,10 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        await asyncio.sleep(2)
+        # Petit délai pour ne pas être banni par Cardmarket
+        await asyncio.sleep(1)
     return results
 
 if __name__ == "__main__":
-    # Render utilise la variable d'environnement PORT
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
