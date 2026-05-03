@@ -33,7 +33,6 @@ def get_price_free(url):
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
-    # On varie les identités pour ne pas se faire repérer
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -45,14 +44,12 @@ def get_price_free(url):
             headers = {
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7", # On ajoute un peu de 'de' pour la cohérence
+                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
                 "Referer": "https://www.google.de/",
                 "DNT": "1"
             }
             
             print(f"🕵️ Tentative {attempt+1} (Proxy DE) : {url}")
-            
-            # Délai aléatoire avant la requête
             time.sleep(random.uniform(2, 5))
             
             response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
@@ -61,8 +58,8 @@ def get_price_free(url):
                 tree = html.fromstring(response.content)
                 rows = tree.xpath('//div[contains(@class, "table-body")]/div[contains(@class, "row")]')
                 
-                # --- FILTRES MIS À JOUR ---
-                blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir"]
+                # AJOUT de "léger" et "leger" pour bloquer les descriptions type "Léger trou".
+                blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir", "trou", "petit", "coté", "defaut", "non", "léger", "leger"]
                 
                 for row in rows:
                     text_ligne = " ".join(row.xpath('.//text()')).lower()
@@ -79,7 +76,6 @@ def get_price_free(url):
         except Exception as e:
             print(f"⚠️ Erreur : {e}")
         
-        # Si ça rate, on attend 6 secondes pour laisser le pool de proxy tourner
         time.sleep(6)
             
     return None
@@ -91,7 +87,6 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        # On est TRÈS prudent : 6 secondes entre chaque carte
         await asyncio.sleep(6)
     return results
 
