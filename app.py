@@ -12,7 +12,7 @@ app = FastAPI()
 
 # --- CONFIGURATION FINALE ---
 # Utilisation du pool Allemagne (DE) pour une discrétion maximale
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
 
 def get_formatted_proxy(raw):
     try:
@@ -42,7 +42,7 @@ def get_price_free(url):
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     ]
     
-    # Filtres échangés (Uniquement ta liste)
+    # Tes filtres exacts
     blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir"]
     
     for attempt in range(3):
@@ -84,7 +84,7 @@ def get_price_free(url):
                         print(f"💰 PRIX TROUVÉ : {price} €")
                         return price
                 
-                print("⚠️ Page lue mais tous les vendeurs sont filtrés (abîmés/défauts).")
+                print("⚠️ Page lue mais tous les vendeurs sont filtrés.")
                 return None
             
             print(f"❌ Erreur HTTP {response.status_code} sur l'essai {attempt+1}")
