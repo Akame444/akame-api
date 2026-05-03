@@ -3,12 +3,14 @@ import re
 import asyncio
 import uvicorn
 import requests
+import time
 from fastapi import FastAPI, Request
 from lxml import html
 
 app = FastAPI()
 
-# --- TA CONFIGURATION PROXY HTTP (MISE À JOUR) ---
+# --- CONFIGURATION ---
+# Nouvelle ligne sans la contrainte iOS pour plus de stabilité
 RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
 
 def get_formatted_proxy(raw):
@@ -19,28 +21,29 @@ def get_formatted_proxy(raw):
         return None
 
 PROXY_URL = get_formatted_proxy(RAW_PROXY)
-# -----------------------------------------------
+# ---------------------
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "proxy": "Nouveau flux Boiling (FR/iOS) actif ✅"}
+    return {"status": "En ligne", "proxy": "Configuré sur Pool France (Général)"}
 
 def get_price_free(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
+    # On utilise un User-Agent de navigateur PC classique maintenant
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "fr-FR,fr;q=0.9"
     }
     
-    # On tente 2 fois au cas où une IP du pool Rotating soit instable
-    for attempt in range(2):
+    for attempt in range(3):
         try:
-            print(f"🕵️ Scan (Tentative {attempt+1}) : {url}")
-            response = requests.get(url, headers=headers, proxies=proxies, timeout=20)
+            print(f"🕵️ Tentative {attempt+1} : {url}")
+            # Timeout de 30s pour laisser le temps au proxy résidentiel de répondre
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
             
             if response.status_code == 200:
                 tree = html.fromstring(response.content)
@@ -55,17 +58,16 @@ def get_price_free(url):
                             price = float(re.sub(r'[^\d.,]', '', price_element[0]).replace(',', '.'))
                             print(f"💰 PRIX TROUVÉ : {price} €")
                             return price
+                print("⚠️ Page chargée mais aucun vendeur valide trouvé.")
                 return None
             
-            elif response.status_code == 403:
-                print("❌ 403 - L'IP est bloquée, nouvel essai avec une autre IP...")
-                continue
+            print(f"❌ Erreur HTTP {response.status_code} (Tentative {attempt+1})")
                 
         except Exception as e:
-            print(f"⚠️ Erreur sur la tentative {attempt+1} : {e}")
-            if attempt == 0:
-                asyncio.sleep(1) # Petite pause avant le retry
-            continue
+            print(f"⚠️ Échec tentative {attempt+1} : {e}")
+        
+        # Pause de 2 secondes avant de retenter avec une nouvelle IP du pool
+        time.sleep(2)
             
     return None
 
@@ -76,7 +78,8 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        await asyncio.sleep(1)
+        # On attend 2 secondes entre chaque carte pour éviter le bannissement
+        await asyncio.sleep(2)
     return results
 
 if __name__ == "__main__":
