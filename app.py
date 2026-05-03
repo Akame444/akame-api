@@ -58,8 +58,8 @@ def get_price_free(url):
                 tree = html.fromstring(response.content)
                 rows = tree.xpath('//div[contains(@class, "table-body")]/div[contains(@class, "row")]')
                 
-                # AJOUT de "léger" et "leger" pour bloquer les descriptions type "Léger trou".
-                blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir", "trou", "petit", "coté", "defaut", "non", "léger", "leger"]
+                # MISE À JOUR : "bimé" et "bime" pour attraper toutes les variantes d'abîmé/âbimé
+                blacklist = ["rmp", "main propre", "remise", "bimé", "bime", "abim", "abîm", "damage", "enfonc", "déchir", "trou", "petit", "coté", "defaut", "défaut", "non", "léger", "leger", "photo"]
                 
                 for row in rows:
                     text_ligne = " ".join(row.xpath('.//text()')).lower()
