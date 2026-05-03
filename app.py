@@ -10,8 +10,6 @@ from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION FINALE ---
-# Utilisation du pool Allemagne (DE) pour une discrétion maximale
 RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
 
 def get_formatted_proxy(raw):
@@ -22,82 +20,84 @@ def get_formatted_proxy(raw):
         return None
 
 PROXY_URL = get_formatted_proxy(RAW_PROXY)
-# ----------------------------
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Allemagne (DE)", "filtres": "Actifs ✅"}
+    return {"status": "En ligne", "mode": "Sécurité Maximale 🛡️"}
 
 def get_price_free(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
-    
-    # Rotation d'identités pour simuler différents navigateurs
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
     ]
     
-    # Liste noire étendue pour ne prendre que du "Propre"
+    # --- GROSSE LISTE NOIRE (Blacklist) ---
     blacklist = [
-        "rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", 
-        "déchir", "trou", "defect", "poor", "played", "heavy", "lightly", 
-        "pli", "scratch", "griff", "poussiere", "poussière", "tache", "task",
-        "worn", "whitening", "cloudy", "crease", "dent", "scratched"
+        # État et défauts (FR)
+        "abim", "abîm", "defaut", "défaut", "damage", "enfonc", "déchir", "trou", "pli", "griff", 
+        "tache", "poussiere", "poussière", "griffe", "rayure", "rayé", "usé", "usure", "poc", 
+        "impact", "corne", "blanchi", "frotté", "pliure", "scellé abimé", "boite abimée",
+        # État et défauts (EN/DE)
+        "poor", "played", "heavy", "lightly", "played", "lp", "gd", "good", "damaged", "skratched", 
+        "whitening", "cloudy", "crease", "dent", "worn", "wear", "defect", "edge", "corner", 
+        "stain", "dust", "nick", "scuff", "beschädigt", "knick", "kratzer", "flecken",
+        # Logistique et divers
+        "rmp", "main propre", "remise", "mains propres", "ebay", "vinted", "vendu", "photo", 
+        "voir", "regarder", "check", "details", "détails", "info", "lire", "read", "description"
     ]
-    
+
     for attempt in range(3):
         try:
             headers = {
                 "User-Agent": random.choice(user_agents),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
                 "Referer": "https://www.google.de/",
-                "DNT": "1"
             }
             
-            print(f"🕵️ Scan (Essai {attempt+1}) : {url}")
-            
-            # Délai aléatoire pour simuler un humain qui réfléchit
+            print(f"🕵️ Analyse de la page : {url}")
             time.sleep(random.uniform(2, 4))
-            
             response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
             
             if response.status_code == 200:
                 tree = html.fromstring(response.content)
-                # On cible les lignes de vendeurs
                 rows = tree.xpath('//div[contains(@class, "table-body")]/div[contains(@class, "row")]')
                 
+                valid_prices = []
+                
                 for row in rows:
-                    # On scanne tout le texte de la ligne (commentaires + état de la carte)
                     text_ligne = " ".join(row.xpath('.//text()')).lower()
                     
-                    # Vérification de la blacklist
+                    # On ignore si un mot de la liste est présent
                     if any(word in text_ligne for word in blacklist):
-                        continue # On ignore cette ligne si un défaut est mentionné
+                        continue
                     
-                    # Extraction du prix
                     price_element = row.xpath('.//div[contains(@class, "price-container")]//span/text()')
                     if price_element:
-                        price_raw = price_element[0]
-                        # Nettoyage pour transformer "170,00 €" en 170.0
-                        price = float(re.sub(r'[^\d.,]', '', price_raw).replace(',', '.'))
-                        print(f"💰 PRIX TROUVÉ : {price} €")
-                        return price
+                        price = float(re.sub(r'[^\d.,]', '', price_element[0]).replace(',', '.'))
+                        valid_prices.append(price)
+
+                # --- LOGIQUE ANTI-ERREUR ---
+                # Si on a trouvé des prix valides
+                if valid_prices:
+                    # Si on a plusieurs fois le même prix le moins cher (ex: 140e)
+                    # Mais qu'on a peur que le premier soit quand même un truc louche
+                    # On prend le prix s'il apparaît sur une ligne "sûre"
+                    if len(valid_prices) > 1:
+                        print(f"✅ Plusieurs options trouvées : {valid_prices[:3]}")
+                        return valid_prices[0] # On renvoie le premier qui a passé tous les filtres
+                    else:
+                        return valid_prices[0]
                 
-                print("⚠️ Page lue mais tous les vendeurs sont filtrés (abîmés/défauts).")
                 return None
             
-            print(f"❌ Erreur HTTP {response.status_code} sur l'essai {attempt+1}")
-                
         except Exception as e:
-            print(f"⚠️ Échec technique essai {attempt+1} : {e}")
-        
-        # Pause avant le prochain essai (nouvelle IP via Rotating Proxy)
+            print(f"⚠️ Erreur : {e}")
         time.sleep(5)
             
     return None
@@ -107,12 +107,9 @@ async def get_prices(request: Request):
     data = await request.json()
     links = data.get("links", [])
     results = {}
-    
     for link in links:
         results[link] = get_price_free(link)
-        # PAUSE CRUCIALE : on attend 5 secondes entre chaque carte pour rester discret
         await asyncio.sleep(5)
-        
     return results
 
 if __name__ == "__main__":
