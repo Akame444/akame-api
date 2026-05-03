@@ -8,29 +8,53 @@ from lxml import html
 
 app = FastAPI()
 
+# --- TA CONFIGURATION PROXY ---
+# Ta ligne IPRoyal formatée pour Python
+RAW_PROXY = "iproyalsockseu.boilingproxies.com:11005:Nh4BaPOY:QzmAQ3Ap-country-fr_session-4dv1luoq_lifetime-1h_device-ios"
+
+def get_formatted_proxy(raw):
+    try:
+        # On découpe l'adresse : ip, port, user, pass
+        parts = raw.split(':')
+        host = parts[0]
+        port = parts[1]
+        user = parts[2]
+        password = parts[3]
+        return f"socks5h://{user}:{password}@{host}:{port}"
+    except:
+        return None
+
+PROXY_URL = get_formatted_proxy(RAW_PROXY)
+# ------------------------------
+
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "message": "API AkameTCG version ultra-rapide ! 🚀"}
+    return {"status": "En ligne", "info": "Proxy IPRoyal (France/iOS) configuré ✅"}
 
 def get_price_free(url):
-    # On simule un vrai navigateur avec des Headers
+    if not PROXY_URL:
+        print("❌ Erreur de formatage du proxy.")
+        return None
+
+    proxies = {"http": PROXY_URL, "https": PROXY_URL}
+    
+    # User-Agent iPhone pour matcher avec ton réglage "iOS" de Boiling
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1"
     }
     
     try:
-        print(f"🕵️ Scan rapide : {url}")
-        response = requests.get(url, headers=headers, timeout=15)
+        print(f"🕵️ Scan via iPhone Proxy : {url}")
+        # On passe par ton proxy résidentiel
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
         
         if response.status_code != 200:
             print(f"❌ Erreur Cardmarket : {response.status_code}")
             return None
             
         tree = html.fromstring(response.content)
-        
-        # On cherche les lignes de prix
         rows = tree.xpath('//div[contains(@class, "table-body")]/div[contains(@class, "row")]')
+        
         blacklist = ["rmp", "main propre", "remise", "abim", "abîm", "damage", "enfonc", "déchir"]
         
         for row in rows:
@@ -38,17 +62,12 @@ def get_price_free(url):
             if not any(word in text_ligne for word in blacklist):
                 price_element = row.xpath('.//div[contains(@class, "price-container")]//span/text()')
                 if price_element:
-                    # Nettoyage du prix (ex: "15,00 €" -> 15.0)
-                    price_str = price_element[0]
-                    price = float(re.sub(r'[^\d.,]', '', price_str).replace(',', '.'))
+                    price = float(re.sub(r'[^\d.,]', '', price_element[0]).replace(',', '.'))
                     print(f"💰 PRIX TROUVÉ : {price} €")
                     return price
-        
-        print("⚠️ Aucun prix valide trouvé sur cette page.")
         return None
-        
     except Exception as e:
-        print(f"❌ Erreur : {e}")
+        print(f"❌ Erreur technique : {e}")
         return None
 
 @app.post("/get_prices")
@@ -58,7 +77,7 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        # Petit délai pour ne pas être banni par Cardmarket
+        # On attend 1s entre les cartes pour être discret
         await asyncio.sleep(1)
     return results
 
