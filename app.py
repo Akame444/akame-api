@@ -9,7 +9,7 @@ from lxml import html
 app = FastAPI()
 
 # --- TA CONFIGURATION PROXY HTTP (MISE À JOUR) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr_device-ios"
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
 
 def get_formatted_proxy(raw):
     try:
