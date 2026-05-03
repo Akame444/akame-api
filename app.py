@@ -4,14 +4,14 @@ import asyncio
 import uvicorn
 import requests
 import time
+import random
 from fastapi import FastAPI, Request
 from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION ---
-# Nouvelle ligne sans la contrainte iOS pour plus de stabilité
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
+# --- CONFIGURATION (ALLEMAGNE) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
 
 def get_formatted_proxy(raw):
     try:
@@ -21,28 +21,40 @@ def get_formatted_proxy(raw):
         return None
 
 PROXY_URL = get_formatted_proxy(RAW_PROXY)
-# ---------------------
+# ---------------------------------
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "proxy": "Configuré sur Pool France (Général)"}
+    return {"status": "En ligne", "region": "Allemagne (DE) ✅"}
 
 def get_price_free(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
-    # On utilise un User-Agent de navigateur PC classique maintenant
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "fr-FR,fr;q=0.9"
-    }
+    
+    # On varie les identités pour ne pas se faire repérer
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
+    ]
     
     for attempt in range(3):
         try:
-            print(f"🕵️ Tentative {attempt+1} : {url}")
-            # Timeout de 30s pour laisser le temps au proxy résidentiel de répondre
+            headers = {
+                "User-Agent": random.choice(user_agents),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8,de;q=0.7", # On ajoute un peu de 'de' pour la cohérence
+                "Referer": "https://www.google.de/",
+                "DNT": "1"
+            }
+            
+            print(f"🕵️ Tentative {attempt+1} (Proxy DE) : {url}")
+            
+            # Délai aléatoire avant la requête
+            time.sleep(random.uniform(2, 5))
+            
             response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
             
             if response.status_code == 200:
@@ -56,18 +68,17 @@ def get_price_free(url):
                         price_element = row.xpath('.//div[contains(@class, "price-container")]//span/text()')
                         if price_element:
                             price = float(re.sub(r'[^\d.,]', '', price_element[0]).replace(',', '.'))
-                            print(f"💰 PRIX TROUVÉ : {price} €")
+                            print(f"💰 VICTOIRE : {price} €")
                             return price
-                print("⚠️ Page chargée mais aucun vendeur valide trouvé.")
                 return None
             
-            print(f"❌ Erreur HTTP {response.status_code} (Tentative {attempt+1})")
+            print(f"❌ Blocage (HTTP {response.status_code})")
                 
         except Exception as e:
-            print(f"⚠️ Échec tentative {attempt+1} : {e}")
+            print(f"⚠️ Erreur : {e}")
         
-        # Pause de 2 secondes avant de retenter avec une nouvelle IP du pool
-        time.sleep(2)
+        # Si ça rate, on attend 6 secondes pour laisser le pool de proxy tourner
+        time.sleep(6)
             
     return None
 
@@ -78,8 +89,8 @@ async def get_prices(request: Request):
     results = {}
     for link in links:
         results[link] = get_price_free(link)
-        # On attend 2 secondes entre chaque carte pour éviter le bannissement
-        await asyncio.sleep(2)
+        # On est TRÈS prudent : 6 secondes entre chaque carte
+        await asyncio.sleep(6)
     return results
 
 if __name__ == "__main__":
