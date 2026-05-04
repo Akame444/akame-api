@@ -2,18 +2,17 @@ import os
 import re
 import asyncio
 import uvicorn
+import requests
 import time
 import random
 import base64
 from fastapi import FastAPI, Request
 from lxml import html
-import requests 
-from curl_cffi import requests as curl_requests 
 
 app = FastAPI()
 
-# --- CONFIGURATION PROXY (ALLEMAGNE) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
+# --- CONFIGURATION (NOUVELLE IP PAYS-BAS) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-nl"
 
 def get_formatted_proxy(raw):
     try:
@@ -30,27 +29,35 @@ EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Scraping Furtif (curl_cffi)"}
+    return {"status": "En ligne", "region": "Pays-Bas (NL) ✅", "mode": "Rollback CM Original + eBay FR"}
 
-# --- CARDMARKET (MODE FURTIF ANTI-CLOUDFLARE) ---
+# --- TON CODE CARDMARKET 100% D'ORIGINE ---
 def get_price_cardmarket(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
+    ]
+    
     for attempt in range(3):
         try:
-            print(f"🕵️ CM Tentative {attempt+1} (Furtif DE) : {url}")
+            headers = {
+                "User-Agent": random.choice(user_agents),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
+                "Referer": "https://www.google.de/",
+                "DNT": "1"
+            }
+            
+            print(f"🕵️ CM Tentative {attempt+1} (Proxy NL) : {url}")
             time.sleep(random.uniform(2, 5))
             
-            # Utilisation de curl_cffi pour imiter Chrome à la perfection
-            response = curl_requests.get(
-                url, 
-                proxies=proxies, 
-                impersonate="chrome110", 
-                timeout=30
-            )
+            response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
             
             if response.status_code == 200:
                 tree = html.fromstring(response.content)
@@ -77,10 +84,10 @@ def get_price_cardmarket(url):
             
     return None
 
-# --- EBAY ---
+# --- LE CODE EBAY (OPTIMISÉ FRANCE) ---
 def get_ebay_token():
     if not EBAY_APP_ID or not EBAY_CERT_ID:
-        print("❌ Clés eBay manquantes dans l'environnement !")
+        print("❌ Clés eBay manquantes !")
         return None
 
     auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -142,10 +149,12 @@ def get_ebay_average_price(keyword, token):
                 print(f"💰 EBAY MOYENNE (sur {count} ventes en FR) : {average} € pour '{keyword}'")
                 return average
             return None
+        else:
+             return None
     except:
         return None
 
-# --- POINT D'ENTRÉE ---
+# --- POINT D'ENTRÉE DE L'API ---
 @app.post("/get_prices")
 async def get_prices(request: Request):
     data = await request.json()
@@ -163,7 +172,7 @@ async def get_prices(request: Request):
         
         if cm_url:
             cm_price = get_price_cardmarket(cm_url)
-            await asyncio.sleep(4) 
+            await asyncio.sleep(6) 
             
         if ebay_token and ebay_keyword:
             ebay_price = get_ebay_average_price(ebay_keyword, ebay_token)
