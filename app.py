@@ -2,16 +2,17 @@ import os
 import re
 import asyncio
 import uvicorn
-import requests
 import time
 import random
 import base64
 from fastapi import FastAPI, Request
 from lxml import html
+import requests 
+from curl_cffi import requests as curl_requests 
 
 app = FastAPI()
 
-# --- CONFIGURATION (RETOUR À TON ORIGINAL ALLEMAGNE) ---
+# --- CONFIGURATION PROXY (ALLEMAGNE) ---
 RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
 
 def get_formatted_proxy(raw):
@@ -23,42 +24,33 @@ def get_formatted_proxy(raw):
 
 PROXY_URL = get_formatted_proxy(RAW_PROXY)
 
-# --- CONFIGURATION EBAY (SÉCURISÉE) ---
+# --- CONFIGURATION EBAY ---
 EBAY_APP_ID = os.environ.get("EBAY_APP_ID")
 EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
-# ---------------------------------
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Rollback CM Original + eBay"}
+    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Scraping Furtif (curl_cffi)"}
 
-# --- TON CODE CARDMARKET ORIGINAL (NON MODIFIÉ) ---
+# --- CARDMARKET (MODE FURTIF ANTI-CLOUDFLARE) ---
 def get_price_cardmarket(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
-    ]
-    
     for attempt in range(3):
         try:
-            headers = {
-                "User-Agent": random.choice(user_agents),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
-                "Referer": "https://www.google.de/",
-                "DNT": "1"
-            }
-            
-            print(f"🕵️ CM Tentative {attempt+1} (Proxy DE) : {url}")
+            print(f"🕵️ CM Tentative {attempt+1} (Furtif DE) : {url}")
             time.sleep(random.uniform(2, 5))
             
-            response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
+            # Utilisation de curl_cffi pour imiter Chrome à la perfection
+            response = curl_requests.get(
+                url, 
+                proxies=proxies, 
+                impersonate="chrome110", 
+                timeout=30
+            )
             
             if response.status_code == 200:
                 tree = html.fromstring(response.content)
@@ -81,14 +73,14 @@ def get_price_cardmarket(url):
         except Exception as e:
             print(f"⚠️ Erreur CM : {e}")
         
-        time.sleep(6) # Ton délai d'origine
+        time.sleep(6)
             
     return None
 
-# --- LE CODE EBAY ---
+# --- EBAY ---
 def get_ebay_token():
     if not EBAY_APP_ID or not EBAY_CERT_ID:
-        print("❌ Clés eBay manquantes !")
+        print("❌ Clés eBay manquantes dans l'environnement !")
         return None
 
     auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -150,13 +142,10 @@ def get_ebay_average_price(keyword, token):
                 print(f"💰 EBAY MOYENNE (sur {count} ventes en FR) : {average} € pour '{keyword}'")
                 return average
             return None
-            
-        else:
-             return None
     except:
         return None
 
-# --- LE POINT D'ENTRÉE ---
+# --- POINT D'ENTRÉE ---
 @app.post("/get_prices")
 async def get_prices(request: Request):
     data = await request.json()
@@ -174,7 +163,7 @@ async def get_prices(request: Request):
         
         if cm_url:
             cm_price = get_price_cardmarket(cm_url)
-            await asyncio.sleep(6) # Ton délai d'origine
+            await asyncio.sleep(4) 
             
         if ebay_token and ebay_keyword:
             ebay_price = get_ebay_average_price(ebay_keyword, ebay_token)
