@@ -46,7 +46,7 @@ def get_price_cardmarket(url):
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
     ]
     
-    for attempt in range(3):
+    for attempt in range(5):
         try:
             headers = {
                 "User-Agent": random.choice(user_agents),
