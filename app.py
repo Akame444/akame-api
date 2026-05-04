@@ -11,8 +11,8 @@ from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION (NOUVELLE IP PAYS-BAS) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-nl"
+# --- CONFIGURATION (NOUVELLE IP FRANCE) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
 
 def get_formatted_proxy(raw):
     try:
@@ -27,9 +27,11 @@ PROXY_URL = get_formatted_proxy(RAW_PROXY)
 EBAY_APP_ID = os.environ.get("EBAY_APP_ID")
 EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
+# --- ON AUTORISE GET ET HEAD POUR STOPPER LE SPAM 405 DE RENDER ---
 @app.get("/")
+@app.head("/") 
 async def root():
-    return {"status": "En ligne", "region": "Pays-Bas (NL) ✅", "mode": "Rollback CM Original + eBay FR"}
+    return {"status": "En ligne", "region": "France (FR) ✅", "mode": "Rollback CM Original + eBay FR"}
 
 # --- TON CODE CARDMARKET 100% D'ORIGINE ---
 def get_price_cardmarket(url):
@@ -50,11 +52,11 @@ def get_price_cardmarket(url):
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                 "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
-                "Referer": "https://www.google.de/",
+                "Referer": "https://www.google.fr/", # <-- Adapté pour la France
                 "DNT": "1"
             }
             
-            print(f"🕵️ CM Tentative {attempt+1} (Proxy NL) : {url}")
+            print(f"🕵️ CM Tentative {attempt+1} (Proxy FR) : {url}")
             time.sleep(random.uniform(2, 5))
             
             response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
