@@ -11,8 +11,8 @@ from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION DU PROXY (TON D'ORIGINE) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
+# --- CONFIGURATION (NOUVELLE IP FRANCE) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-fr"
 
 def get_formatted_proxy(raw):
     try:
