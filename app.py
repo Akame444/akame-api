@@ -12,7 +12,7 @@ from lxml import html
 app = FastAPI()
 
 # --- CONFIGURATION (NOUVELLE IP FRANCE) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-ee"
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de_streaming-1"
 
 def get_formatted_proxy(raw):
     try:
@@ -52,7 +52,7 @@ def get_price_cardmarket(url):
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
                 "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
-                "Referer": "https://www.google.com/",
+                "Referer": "https://www.google.de/",
                 "DNT": "1"
             }
             
