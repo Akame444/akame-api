@@ -11,8 +11,8 @@ from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION (NOUVELLE IP ROYAUME-UNI) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-gb"
+# --- CONFIGURATION (RETOUR À TON ORIGINAL ALLEMAGNE) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
 
 def get_formatted_proxy(raw):
     try:
@@ -30,15 +30,15 @@ EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Royaume-Uni (GB) ✅", "mode": "Hybride CM + eBay FR Strict"}
+    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Rollback CM Original + eBay"}
 
+# --- TON CODE CARDMARKET ORIGINAL (NON MODIFIÉ) ---
 def get_price_cardmarket(url):
     if not PROXY_URL:
         return None
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
-    # RETOUR AUX SOURCES : Tes User-Agents d'origine
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -47,16 +47,15 @@ def get_price_cardmarket(url):
     
     for attempt in range(3):
         try:
-            # RETOUR AUX SOURCES : Tes Headers d'origine avec le referer anglais
             headers = {
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en-GB;q=0.7",
-                "Referer": "https://www.google.co.uk/",
+                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
+                "Referer": "https://www.google.de/",
                 "DNT": "1"
             }
             
-            print(f"🕵️ CM Tentative {attempt+1} : {url}")
+            print(f"🕵️ CM Tentative {attempt+1} (Proxy DE) : {url}")
             time.sleep(random.uniform(2, 5))
             
             response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
@@ -82,13 +81,14 @@ def get_price_cardmarket(url):
         except Exception as e:
             print(f"⚠️ Erreur CM : {e}")
         
-        time.sleep(6)
+        time.sleep(6) # Ton délai d'origine
             
     return None
 
+# --- LE CODE EBAY ---
 def get_ebay_token():
     if not EBAY_APP_ID or not EBAY_CERT_ID:
-        print("❌ Clés eBay manquantes dans l'environnement !")
+        print("❌ Clés eBay manquantes !")
         return None
 
     auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -110,10 +110,8 @@ def get_ebay_token():
         if response.status_code == 200:
             return response.json().get("access_token")
         else:
-            print(f"❌ Erreur Auth eBay: {response.text}")
             return None
-    except Exception as e:
-        print(f"⚠️ Exception Auth eBay: {e}")
+    except:
         return None
 
 def get_ebay_average_price(keyword, token):
@@ -125,7 +123,6 @@ def get_ebay_average_price(keyword, token):
     
     safe_keyword = f"{keyword} -lot -display -booster -psa -pca -bgs -cgc -gradé -grade -vide"
     
-    # NOUVEAU FILTRE : On force la recherche à cibler UNIQUEMENT des articles situés en France
     params = {
         "q": safe_keyword,
         "limit": 5,
@@ -155,13 +152,11 @@ def get_ebay_average_price(keyword, token):
             return None
             
         else:
-             print(f"❌ Erreur Recherche eBay: {response.text}")
              return None
-             
-    except Exception as e:
-        print(f"⚠️ Exception Recherche eBay: {e}")
+    except:
         return None
 
+# --- LE POINT D'ENTRÉE ---
 @app.post("/get_prices")
 async def get_prices(request: Request):
     data = await request.json()
@@ -179,7 +174,7 @@ async def get_prices(request: Request):
         
         if cm_url:
             cm_price = get_price_cardmarket(cm_url)
-            await asyncio.sleep(4) 
+            await asyncio.sleep(6) # Ton délai d'origine
             
         if ebay_token and ebay_keyword:
             ebay_price = get_ebay_average_price(ebay_keyword, ebay_token)
