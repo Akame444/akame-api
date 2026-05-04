@@ -11,8 +11,8 @@ from lxml import html
 
 app = FastAPI()
 
-# --- CONFIGURATION (ALLEMAGNE) ---
-RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-de"
+# --- CONFIGURATION (NOUVELLE IP ROYAUME-UNI) ---
+RAW_PROXY = "iproyaleu.boilingproxies.com:11002:Nh4BaPOY:QzmAQ3Ap-country-gb"
 
 def get_formatted_proxy(raw):
     try:
@@ -30,7 +30,7 @@ EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Hybride CM (Headers originaux) + eBay FR Strict"}
+    return {"status": "En ligne", "region": "Royaume-Uni (GB) ✅", "mode": "Hybride CM + eBay FR Strict"}
 
 def get_price_cardmarket(url):
     if not PROXY_URL:
@@ -47,12 +47,12 @@ def get_price_cardmarket(url):
     
     for attempt in range(3):
         try:
-            # RETOUR AUX SOURCES : Tes Headers d'origine qui ne faisaient pas d'erreur 403
+            # RETOUR AUX SOURCES : Tes Headers d'origine avec le referer anglais
             headers = {
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,de;q=0.7",
-                "Referer": "https://www.google.de/",
+                "Accept-Language": "fr-FR,fr;q=0.9,en-US;q=0.8,en-GB;q=0.7",
+                "Referer": "https://www.google.co.uk/",
                 "DNT": "1"
             }
             
