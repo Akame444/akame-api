@@ -3,7 +3,7 @@ import base64
 import requests
 import uvicorn
 import statistics
-import re
+import numpy as np # Pour les calculs de quartiles
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
 
@@ -15,7 +15,7 @@ EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 @app.get("/")
 @app.head("/")
 async def root():
-    return {"status": "API eBay Master (Anti-Lots)", "mode": "Calcul de précision"}
+    return {"status": "API eBay Ultra-Précision", "mode": "Filtre IQR Anti-Lots"}
 
 def get_ebay_token():
     auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
@@ -29,14 +29,22 @@ def get_ebay_token():
         return r.json().get("access_token")
     except: return None
 
-def is_garbage_lot(title, price):
-    """Détecte si c'est un lot d'articles ou un accessoire en fonction du titre et du prix"""
-    t = title.lower()
-    # Mots-clés indiquant une quantité multiple
-    lot_keywords = ["x2", "x3", "x4", "x5", "x6", "x10", "lot de", "set of", "case", "scellé x", "pack de"]
-    if any(k in t for k in lot_keywords):
-        return True
-    return False
+def clean_outliers_iqr(prices):
+    """Supprime mathématiquement les prix trop hauts (lots) et trop bas (accessoires)"""
+    if len(prices) < 4: return prices
+    
+    # On trie les prix
+    data = sorted(prices)
+    q1 = np.percentile(data, 25) # 25% des prix les plus bas
+    q3 = np.percentile(data, 75) # 75% des prix les plus hauts
+    iqr = q3 - q1
+    
+    # On définit les bornes (1.5 est le standard, on peut baisser à 1.2 pour être plus strict)
+    lower_bound = q1 - (1.2 * iqr)
+    upper_bound = q3 + (1.2 * iqr)
+    
+    # On ne garde que ce qui est dans la fourchette normale
+    return [p for p in data if p >= lower_bound and p <= upper_bound]
 
 def get_ebay_analytics(keyword, token):
     search_url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
@@ -46,56 +54,42 @@ def get_ebay_analytics(keyword, token):
     one_month_ago = today - timedelta(days=30)
     date_filter = f"lastSoldDate:[{one_month_ago.strftime('%Y-%m-%dT%H:%M:%S.000Z')}..{today.strftime('%Y-%m-%dT%H:%M:%S.000Z')}]"
 
-    # On demande 100 résultats pour avoir de la matière à filtrer
+    # On durcit les mots-clés d'exclusion
+    excluded = "-lot -vide -case -display -bundle -pack -bundle -set -x2 -x3 -x4 -x10"
+    
     params = {
-        "q": f"{keyword} -lot -vide -case -display",
-        "limit": 100,
+        "q": f"{keyword} {excluded}",
+        "limit": 50,
         "filter": f"conditions:{{NEW}},{date_filter},itemLocationCountry:{{FR}}",
-        "sort": "newlyListed"
+        "sort": "price" 
     }
 
     try:
         r = requests.get(search_url, headers=headers, params=params)
         items = r.json().get("itemSummaries", [])
-        if not items: return {"error": "Rien trouvé"}
+        if not items: return {"error": "Aucune vente trouvée"}
 
-        clean_prices = []
-        valid_listings = []
+        raw_prices = [float(i['price']['value']) for i in items]
+        
+        # --- ÉTAPE 1 : Nettoyage Statistique (IQR) ---
+        filtered_prices = clean_outliers_iqr(raw_prices)
 
-        for i in items:
-            title = i.get('title', '')
-            price = float(i['price']['value'])
-            
-            # 1. On vire les lots évidents au titre
-            if is_garbage_lot(title, price):
-                continue
-                
-            clean_prices.append(price)
-            valid_listings.append({"t": title, "p": price, "l": i.get('itemWebUrl')})
+        if not filtered_prices: return {"error": "Données trop instables"}
 
-        if len(clean_prices) < 3:
-            return {"error": "Pas assez de données valides"}
-
-        # 2. FILTRE STATISTIQUE : On ignore les extrêmes (Outliers)
-        # On trie et on enlève les 15% les plus bas et les 15% les plus hauts
-        clean_prices.sort()
-        cut = int(len(clean_prices) * 0.15)
-        filtered_prices = clean_prices[cut:-cut] if len(clean_prices) > 6 else clean_prices
-
-        # 3. CALCULS FINAUX
-        avg_price = round(statistics.mean(filtered_prices), 2)
-        median_price = round(statistics.median(filtered_prices), 2)
-
-        # Tendance
-        recent_avg = statistics.mean(filtered_prices[:3]) if len(filtered_prices) >= 3 else filtered_prices[0]
-        older_avg = statistics.mean(filtered_prices[-3:]) if len(filtered_prices) >= 3 else filtered_prices[-1]
-        trend = round(((recent_avg - older_avg) / older_avg) * 100, 2)
+        # --- ÉTAPE 2 : Calculs ---
+        # On utilise la Médiane sur les données filtrées pour une précision chirurgicale
+        market_price = round(statistics.median(filtered_prices), 2)
+        
+        # Calcul de tendance sur les 5 dernières ventes
+        recent = statistics.mean(filtered_prices[:5]) if len(filtered_prices) >= 5 else filtered_prices[0]
+        older = statistics.mean(filtered_prices[-5:]) if len(filtered_prices) >= 5 else filtered_prices[-1]
+        trend = round(((recent - older) / older) * 100, 2)
 
         return {
-            "moyenne": median_price, # On utilise la médiane car c'est la plus juste
+            "moyenne": market_price,
             "hausse_30j": f"{trend}%",
             "volume": len(filtered_prices),
-            "exemples": valid_listings[:3]
+            "exemples": [{"t": i.get('title'), "p": i['price']['value']} for i in items[:3]]
         }
     except Exception as e:
         return {"error": str(e)}
@@ -119,8 +113,7 @@ async def get_prices(request: Request):
                     "prix_moyen": analysis["moyenne"],
                     "evolution": analysis["hausse_30j"],
                     "volume": analysis["volume"]
-                },
-                "annonces": analysis["exemples"]
+                }
             }
         else:
             results[kw] = {"error": analysis["error"]}
