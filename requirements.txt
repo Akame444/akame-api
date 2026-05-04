@@ -1,5 +1,4 @@
 fastapi
 uvicorn
-requests[socks]
-lxml
-curl_cffi
+requests
+numpy
