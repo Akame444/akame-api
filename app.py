@@ -24,14 +24,13 @@ def get_formatted_proxy(raw):
 PROXY_URL = get_formatted_proxy(RAW_PROXY)
 
 # --- CONFIGURATION EBAY (SÉCURISÉE) ---
-# Le code va chercher les clés cachées sur le serveur Render
 EBAY_APP_ID = os.environ.get("EBAY_APP_ID")
 EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 # ---------------------------------
 
 @app.get("/")
 async def root():
-    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Hybride CM + eBay sécurisé"}
+    return {"status": "En ligne", "region": "Allemagne (DE) ✅", "mode": "Hybride CM (Headers originaux) + eBay FR Strict"}
 
 def get_price_cardmarket(url):
     if not PROXY_URL:
@@ -39,6 +38,7 @@ def get_price_cardmarket(url):
 
     proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
+    # RETOUR AUX SOURCES : Tes User-Agents d'origine
     user_agents = [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -47,6 +47,7 @@ def get_price_cardmarket(url):
     
     for attempt in range(3):
         try:
+            # RETOUR AUX SOURCES : Tes Headers d'origine qui ne faisaient pas d'erreur 403
             headers = {
                 "User-Agent": random.choice(user_agents),
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
@@ -121,10 +122,14 @@ def get_ebay_average_price(keyword, token):
         "Authorization": f"Bearer {token}",
         "X-EBAY-C-MARKETPLACE-ID": "EBAY_FR"
     }
+    
+    safe_keyword = f"{keyword} -lot -display -booster -psa -pca -bgs -cgc -gradé -grade -vide"
+    
+    # NOUVEAU FILTRE : On force la recherche à cibler UNIQUEMENT des articles situés en France
     params = {
-        "q": keyword,
+        "q": safe_keyword,
         "limit": 5,
-        "filter": "buyingOptions:{FIXED_PRICE}"
+        "filter": "buyingOptions:{FIXED_PRICE},itemLocationCountry:{FR}"
     }
 
     try:
@@ -132,6 +137,7 @@ def get_ebay_average_price(keyword, token):
         if response.status_code == 200:
             items = response.json().get("itemSummaries", [])
             if not items:
+                print(f"⚠️ Aucun résultat eBay pour : {keyword}")
                 return None
             
             total_price = 0
@@ -144,7 +150,7 @@ def get_ebay_average_price(keyword, token):
             
             if count > 0:
                 average = round(total_price / count, 2)
-                print(f"💰 EBAY MOYENNE (sur {count} ventes) : {average} € pour '{keyword}'")
+                print(f"💰 EBAY MOYENNE (sur {count} ventes en FR) : {average} € pour '{keyword}'")
                 return average
             return None
             
