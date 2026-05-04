@@ -1,120 +1,135 @@
 import os
-import re
+import base64
+import requests
 import uvicorn
 import statistics
-import random
-import time
+from datetime import datetime, timedelta
 from fastapi import FastAPI, Request
-from lxml import html
-from curl_cffi import requests as curl_requests
 
 app = FastAPI()
+
+# --- CONFIGURATION EBAY ---
+EBAY_APP_ID = os.environ.get("EBAY_APP_ID")
+EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
 @app.get("/")
 @app.head("/")
 async def root():
-    return {"status": "Analyseur de Ventes Réussies eBay", "mode": "Sold Items Only"}
+    return {"status": "API eBay Officielle Active", "mode": "Sold Items / Market Insights"}
 
-def get_sold_prices_ebay(keyword):
-    """Scrape les ventes terminées et réussies sur eBay FR"""
-    # Nettoyage des mots-clés
-    banned = "-lot -vide -empty -code -online -tcgl -sleeves -pochette -energy -energie"
-    query = f"{keyword} {banned}".replace(" ", "+")
+def get_ebay_token():
+    """Génère le token OAuth officiel"""
+    auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
+    if not EBAY_APP_ID or not EBAY_CERT_ID:
+        return None
     
-    # URL magique : LH_Sold=1 (Vendu) + LH_Complete=1 (Terminé) + LH_ItemCondition=3 (Neuf)
-    url = f"https://www.ebay.fr/sch/i.html?_nkw={query}&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3&_ipg=60"
+    credentials = f"{EBAY_APP_ID}:{EBAY_CERT_ID}"
+    encoded_creds = base64.b64encode(credentials.encode()).decode()
+
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {encoded_creds}"
+    }
+    data = {
+        "grant_type": "client_credentials",
+        "scope": "https://api.ebay.com/oauth/api_scope"
+    }
 
     try:
-        # On imite un vrai navigateur Chrome pour ne pas être bloqué
-        response = curl_requests.get(url, impersonate="chrome110", timeout=30)
-        
-        if response.status_code != 200:
-            print(f"❌ Erreur eBay : {response.status_code}")
-            return None
-
-        tree = html.fromstring(response.content)
-        
-        # On cherche les blocs d'annonces vendues
-        items = tree.xpath('//div[contains(@class, "s-item__info")]')
-        
-        valid_prices = []
-        listings_data = []
-
-        for item in items:
-            # Extraction du titre
-            title_el = item.xpath('.//div[@class="s-item__title"]//span[@role="heading"]/text()')
-            if not title_el: continue
-            title = title_el[0].lower()
-
-            # On vérifie encore une fois qu'on ne prend pas de l'occasion ou des accessoires
-            if any(x in title for x in ["occasion", "used", "abîmé", "damaged", "vide", "empty", "boite seule"]):
-                continue
-
-            # Extraction du prix (il peut y avoir "vendu pour" ou des dates, on nettoie)
-            price_el = item.xpath('.//span[@class="s-item__price"]//text()')
-            if price_el:
-                # Nettoyage du prix : on garde que les chiffres et la virgule
-                raw_price = "".join(re.findall(r'[0-9.,]', price_el[0])).replace(',', '.')
-                try:
-                    price = float(raw_price)
-                    
-                    # --- SÉCURITÉ ANTI-POLLUANTS ---
-                    # Si c'est une ETB ou une UPC, on ignore les ventes < 50€ (boosters, etc.)
-                    if "etb" in keyword.lower() or "upc" in keyword.lower() or "coffret" in keyword.lower():
-                        if price < 50: continue
-                    
-                    valid_prices.append(price)
-                    
-                    # On garde les 5 premiers pour l'affichage
-                    if len(listings_data) < 5:
-                        listings_data.append({
-                            "title": title_el[0],
-                            "price": price,
-                            "date": "Vendu"
-                        })
-                except:
-                    continue
-
-        if not valid_prices:
-            return None
-
-        # --- CALCULS STATISTIQUES ---
-        # Médiane : beaucoup plus précis pour le TCG car ignore les ventes aberrantes
-        median_sold = round(statistics.median(valid_prices), 2)
-        avg_sold = round(statistics.mean(valid_prices), 2)
-        
-        return {
-            "prix_moyen_vendu": median_sold,
-            "nb_ventes_analysees": len(valid_prices),
-            "annonces": listings_data
-        }
-
-    except Exception as e:
-        print(f"⚠️ Erreur Scraping Sold : {e}")
+        r = requests.post(auth_url, headers=headers, data=data)
+        return r.json().get("access_token")
+    except:
         return None
+
+def get_ebay_analytics(keyword, token):
+    """Analyse les ventes réelles sur les 30 derniers jours"""
+    search_url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "X-EBAY-C-MARKETPLACE-ID": "EBAY_FR"
+    }
+
+    # Calcul des dates pour le filtre (30 derniers jours)
+    today = datetime.utcnow()
+    one_month_ago = today - timedelta(days=30)
+    date_filter = f"lastSoldDate:[{one_month_ago.strftime('%Y-%m-%dT%H:%M:%S.000Z')}..{today.strftime('%Y-%m-%dT%H:%M:%S.000Z')}]"
+
+    # Filtre strict : Neuf, Vendu en France, Dernier mois
+    params = {
+        "q": f"{keyword} -lot -vide",
+        "limit": 50,
+        "filter": f"conditions:{{NEW}},{date_filter},itemLocationCountry:{{FR}}",
+        "sort": "newlyListed"
+    }
+
+    try:
+        r = requests.get(search_url, headers=headers, params=params)
+        if r.status_code != 200:
+            return {"error": f"API Error {r.status_code}"}
+
+        items = r.json().get("itemSummaries", [])
+        if not items:
+            return {"error": "Aucune vente trouvée sur 30j"}
+
+        prices = [float(i['price']['value']) for i in items]
+        
+        # --- CALCULS STATISTIQUES ---
+        avg_price = round(statistics.mean(prices), 2)
+        median_price = round(statistics.median(prices), 2)
+
+        # Calcul de tendance : Comparaison 10 derniers vs 10 premiers (du mois)
+        if len(prices) >= 10:
+            recent_avg = statistics.mean(prices[:5])
+            older_avg = statistics.mean(prices[-5:])
+            trend = round(((recent_avg - older_avg) / older_avg) * 100, 2)
+        else:
+            trend = 0
+
+        # Annonces pour l'affichage (les 3 plus récentes)
+        listings = []
+        for i in items[:3]:
+            listings.append({
+                "t": i.get('title'),
+                "p": i.get('price', {}).get('value'),
+                "l": i.get('itemWebUrl')
+            })
+
+        return {
+            "moyenne": avg_price,
+            "mediane": median_price,
+            "hausse_30j": f"{trend}%",
+            "ventes_count": len(prices),
+            "exemples": listings
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/get_prices")
 async def get_prices(request: Request):
     data = await request.json()
     items = data.get("items", [])
     results = {}
+    
+    token = get_ebay_token()
+    if not token:
+        return {"error": "Problème de credentials eBay"}
 
     for item in items:
         keyword = item.get("ebay_keyword")
+        analysis = get_ebay_analytics(keyword, token)
         
-        # On lance l'analyse des ventes réussies
-        market_data = get_sold_prices_ebay(keyword)
-        
-        if market_data:
+        if "error" not in analysis:
             results[keyword] = {
                 "stats": {
-                    "prix_moyen": market_data["prix_moyen_vendu"], # On renvoie la médiane ici
-                    "nb_ventes": market_data["nb_ventes_analysees"]
+                    "prix_moyen": analysis["mediane"], # On utilise la médiane (plus fiable)
+                    "moyenne_brute": analysis["moyenne"],
+                    "evolution": analysis["hausse_30j"],
+                    "volume": analysis["ventes_count"]
                 },
-                "annonces": market_data["annonces"]
+                "annonces": analysis["exemples"]
             }
         else:
-            results[keyword] = {"error": "Aucune vente réussie trouvée"}
+            results[keyword] = {"error": analysis["error"]}
             
     return results
 
