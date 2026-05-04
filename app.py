@@ -1,132 +1,122 @@
 import os
-import base64
-import requests
+import re
 import uvicorn
 import statistics
+import random
+import time
 from fastapi import FastAPI, Request
+from lxml import html
+from curl_cffi import requests as curl_requests
 
-# --- LA LIGNE QUE RENDER CHERCHE (NE PAS SUPPRIMER) ---
 app = FastAPI()
-
-# --- CONFIGURATION EBAY ---
-EBAY_APP_ID = os.environ.get("EBAY_APP_ID")
-EBAY_CERT_ID = os.environ.get("EBAY_CERT_ID")
 
 @app.get("/")
 @app.head("/")
 async def root():
-    return {
-        "status": "Moteur eBay Actif",
-        "region": "Europe Pool",
-        "condition": "Strict NEW only"
-    }
+    return {"status": "Analyseur de Ventes Réussies eBay", "mode": "Sold Items Only"}
 
-def get_ebay_market_data(keyword, token):
-    """Récupère uniquement les annonces NEUVES et calcule les stats"""
-    search_url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-EBAY-C-MARKETPLACE-ID": "EBAY_FR"
-    }
+def get_sold_prices_ebay(keyword):
+    """Scrape les ventes terminées et réussies sur eBay FR"""
+    # Nettoyage des mots-clés
+    banned = "-lot -vide -empty -code -online -tcgl -sleeves -pochette -energy -energie"
+    query = f"{keyword} {banned}".replace(" ", "+")
     
-    # Filtre strict : on vire l'occasion et les boosters vides
-    safe_keyword = f"{keyword} -lot -booster -vide -empty -occasion -used -abîmé -damaged"
-    
-    params = {
-        "q": safe_keyword,
-        "limit": 15,
-        # FILTRE : conditions:{NEW} force les objets neufs/scellés
-        "filter": "conditions:{NEW},buyingOptions:{FIXED_PRICE},itemLocationCountry:{FR}",
-        "sort": "price" 
-    }
+    # URL magique : LH_Sold=1 (Vendu) + LH_Complete=1 (Terminé) + LH_ItemCondition=3 (Neuf)
+    url = f"https://www.ebay.fr/sch/i.html?_nkw={query}&LH_Sold=1&LH_Complete=1&LH_ItemCondition=3&_ipg=60"
 
     try:
-        response = requests.get(search_url, headers=headers, params=params)
-        if response.status_code == 200:
-            items = response.json().get("itemSummaries", [])
-            if not items:
-                return None
+        # On imite un vrai navigateur Chrome pour ne pas être bloqué
+        response = curl_requests.get(url, impersonate="chrome110", timeout=30)
+        
+        if response.status_code != 200:
+            print(f"❌ Erreur eBay : {response.status_code}")
+            return None
 
-            prices = [float(item['price']['value']) for item in items]
-            
-            # Calcul des statistiques de marché
-            avg_price = round(statistics.mean(prices), 2)
-            median_price = round(statistics.median(prices), 2)
-            
-            # Spread de marché (Tendance)
-            low_market = statistics.mean(prices[:3]) if len(prices) >= 3 else prices[0]
-            high_market = statistics.mean(prices[-3:]) if len(prices) >= 3 else prices[-1]
-            spread = round(((high_market - low_market) / low_market) * 100, 2)
+        tree = html.fromstring(response.content)
+        
+        # On cherche les blocs d'annonces vendues
+        items = tree.xpath('//div[contains(@class, "s-item__info")]')
+        
+        valid_prices = []
+        listings_data = []
 
-            listings = []
-            for item in items[:5]:
-                listings.append({
-                    "title": item.get('title'),
-                    "price": item.get('price', {}).get('value'),
-                    "link": item.get('itemWebUrl'),
-                    "image": item.get('thumbnailImages', [{}])[0].get('imageUrl', "")
-                })
+        for item in items:
+            # Extraction du titre
+            title_el = item.xpath('.//div[@class="s-item__title"]//span[@role="heading"]/text()')
+            if not title_el: continue
+            title = title_el[0].lower()
 
-            return {
-                "moyenne": avg_price,
-                "mediane": median_price,
-                "tendance": f"{spread}%",
-                "annonces": listings
-            }
+            # On vérifie encore une fois qu'on ne prend pas de l'occasion ou des accessoires
+            if any(x in title for x in ["occasion", "used", "abîmé", "damaged", "vide", "empty", "boite seule"]):
+                continue
+
+            # Extraction du prix (il peut y avoir "vendu pour" ou des dates, on nettoie)
+            price_el = item.xpath('.//span[@class="s-item__price"]//text()')
+            if price_el:
+                # Nettoyage du prix : on garde que les chiffres et la virgule
+                raw_price = "".join(re.findall(r'[0-9.,]', price_el[0])).replace(',', '.')
+                try:
+                    price = float(raw_price)
+                    
+                    # --- SÉCURITÉ ANTI-POLLUANTS ---
+                    # Si c'est une ETB ou une UPC, on ignore les ventes < 50€ (boosters, etc.)
+                    if "etb" in keyword.lower() or "upc" in keyword.lower() or "coffret" in keyword.lower():
+                        if price < 50: continue
+                    
+                    valid_prices.append(price)
+                    
+                    # On garde les 5 premiers pour l'affichage
+                    if len(listings_data) < 5:
+                        listings_data.append({
+                            "title": title_el[0],
+                            "price": price,
+                            "date": "Vendu"
+                        })
+                except:
+                    continue
+
+        if not valid_prices:
+            return None
+
+        # --- CALCULS STATISTIQUES ---
+        # Médiane : beaucoup plus précis pour le TCG car ignore les ventes aberrantes
+        median_sold = round(statistics.median(valid_prices), 2)
+        avg_sold = round(statistics.mean(valid_prices), 2)
+        
+        return {
+            "prix_moyen_vendu": median_sold,
+            "nb_ventes_analysees": len(valid_prices),
+            "annonces": listings_data
+        }
+
     except Exception as e:
-        print(f"Erreur eBay : {e}")
-    return None
+        print(f"⚠️ Erreur Scraping Sold : {e}")
+        return None
 
 @app.post("/get_prices")
 async def get_prices(request: Request):
     data = await request.json()
     items = data.get("items", [])
     results = {}
-    
-    token = get_ebay_token()
-    if not token:
-        return {"error": "Token eBay manquant"}
 
     for item in items:
         keyword = item.get("ebay_keyword")
-        cm_url = item.get("cm_url")
         
-        market_stats = get_ebay_market_data(keyword, token)
+        # On lance l'analyse des ventes réussies
+        market_data = get_sold_prices_ebay(keyword)
         
-        if market_stats:
+        if market_data:
             results[keyword] = {
                 "stats": {
-                    "prix_moyen": market_stats["moyenne"],
-                    "prix_mediane": market_stats["mediane"],
-                    "hausse_baisse": market_stats["tendance"],
+                    "prix_moyen": market_data["prix_moyen_vendu"], # On renvoie la médiane ici
+                    "nb_ventes": market_data["nb_ventes_analysees"]
                 },
-                "annonces": market_stats["annonces"],
-                "admin_links": {
-                    "cardmarket": cm_url
-                }
+                "annonces": market_data["annonces"]
             }
         else:
-            results[keyword] = {"error": "Aucun produit neuf trouvé"}
+            results[keyword] = {"error": "Aucune vente réussie trouvée"}
             
     return results
 
-def get_ebay_token():
-    auth_url = "https://api.ebay.com/identity/v1/oauth2/token"
-    if not EBAY_APP_ID or not EBAY_CERT_ID:
-        return None
-    credentials = f"{EBAY_APP_ID}:{EBAY_CERT_ID}"
-    encoded = base64.b64encode(credentials.encode()).decode()
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Authorization": f"Basic {encoded}"
-    }
-    data = {"grant_type": "client_credentials", "scope": "https://api.ebay.com/oauth/api_scope"}
-    try:
-        r = requests.post(auth_url, headers=headers, data=data)
-        return r.json().get("access_token")
-    except:
-        return None
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
